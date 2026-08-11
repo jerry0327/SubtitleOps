@@ -2,12 +2,80 @@
 
 [![CI](https://github.com/jerry0327/SubtitleOps/actions/workflows/ci.yml/badge.svg)](https://github.com/jerry0327/SubtitleOps/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/jerry0327/SubtitleOps/actions/workflows/codeql.yml/badge.svg)](https://github.com/jerry0327/SubtitleOps/actions/workflows/codeql.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/jerry0327/SubtitleOps?display_name=tag)](https://github.com/jerry0327/SubtitleOps/releases)
+[![Python 3.10–3.14](https://img.shields.io/badge/python-3.10%E2%80%933.14-blue)](https://github.com/jerry0327/SubtitleOps/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-**SubtitleOps** is a deterministic subtitle quality gate for **SRT**, **WebVTT**, and a conservative **TTML/DFXP** subset. It checks single files or directory trees, emits text, JSON, or SARIF reports, and performs bounded, opt-in normalization and timing repair without rewriting dialogue.
+**SubtitleOps** is a deterministic subtitle quality gate for **SRT**, **WebVTT**, and a conservative **TTML/DFXP** subset. It checks individual files or directory trees, emits text, JSON, or SARIF reports, and performs bounded, opt-in normalization and timing repair without rewriting dialogue.
 
 It belongs between transcription/localization and publication: generated-caption validation, localization handoff, batch media pipelines, CI quality gates, and pre-release checks.
 
-> **Status:** `0.3.0` alpha. The CLI and Python API are tested on Python 3.10–3.14. Public APIs and defaults may still evolve before 1.0; stable diagnostic codes are not silently repurposed.
+> **Status:** `0.3.0` alpha. The CLI and Python API are tested on Python 3.10–3.14, with additional Windows and macOS CI coverage. Public APIs and defaults may evolve before 1.0; stable diagnostic codes are not silently repurposed.
+
+## Why SubtitleOps
+
+Subtitle defects are often discovered only after a video or learning asset reaches review. General-purpose linters do not understand cue timing, while interactive subtitle editors are difficult to enforce consistently in CI.
+
+SubtitleOps provides:
+
+- reproducible, explainable rules rather than an opaque score;
+- stable exit codes, rule IDs, JSON, and SARIF for automation;
+- conservative conversion and repair behavior that rejects unsafe loss;
+- bounded reads and per-file isolation for untrusted batch inputs;
+- a dependency-light runtime suitable for local and CI use.
+
+SubtitleOps deliberately does **not** perform speech recognition, translation, semantic rewriting, media muxing, or visual rendering comparison.
+
+## Quick start
+
+Install from the release tag:
+
+```bash
+python -m pip install "git+https://github.com/jerry0327/SubtitleOps.git@v0.3.0"
+subtitleops --version
+subtitleops check subtitles/
+```
+
+For development from a checkout:
+
+```bash
+git clone https://github.com/jerry0327/SubtitleOps.git
+cd SubtitleOps
+python -m pip install -e ".[dev]"
+python -m unittest discover -s tests -v
+```
+
+SubtitleOps is not currently claimed as published on PyPI. GitHub release artifacts and checksums are the public release channel.
+
+## Reusable GitHub Action
+
+Pin an immutable release tag or full commit SHA in production:
+
+```yaml
+name: Subtitle quality
+on: [pull_request]
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  subtitleops:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: jerry0327/SubtitleOps@v0.3.0
+        with:
+          paths: |
+            subtitles/
+            trailers/captions.vtt
+          upload-sarif: "true"
+          fail-on: warning
+```
+
+The action exposes `exit-code`, `files-checked`, `issues`, and `report-path`. A floating `v0` tag follows the latest compatible 0.x action release, but immutable version tags or commit SHAs provide stronger supply-chain pinning. See [GitHub Action](docs/github-action.md).
 
 ## Capabilities
 
@@ -18,26 +86,9 @@ It belongs between transcription/localization and publication: generated-caption
 - strict `.subtitleops.toml` and `[tool.subtitleops]` configuration;
 - a default 10 MiB per-file bounded-read guard for untrusted inputs;
 - SRT ↔ WebVTT ↔ canonical TTML conversion;
-- same-format WebVTT repairs that preserve the signature header plus `NOTE`, `STYLE`, and `REGION` blocks;
+- same-format WebVTT repairs that preserve signature metadata plus `NOTE`, `STYLE`, and `REGION` blocks;
 - a reusable composite GitHub Action with optional Code Scanning upload;
 - standard-library runtime on Python 3.11+; Python 3.10 uses only `tomli` for TOML compatibility.
-
-SubtitleOps deliberately does **not** perform speech recognition, translation, semantic rewriting, media muxing, or visual rendering comparison.
-
-## Install
-
-From a checkout:
-
-```bash
-python -m pip install -e .
-subtitleops --version
-```
-
-For package-building tools:
-
-```bash
-python -m pip install -e ".[dev]"
-```
 
 ## Check subtitle files
 
@@ -83,7 +134,7 @@ subtitleops check subtitles/ --fail-on error
 subtitleops check subtitles/ --fail-on none
 ```
 
-See [reporting](docs/reporting.md) and [CI integration](docs/ci.md).
+See [reporting](docs/reporting.md), [CI integration](docs/ci.md), and the staged [adoption guide](docs/adoption.md).
 
 ## Configuration
 
@@ -131,35 +182,7 @@ subtitleops convert captions.vtt captions.ttml
 
 The TTML parser accepts media-time documents with parallel timing, nested timed containers, clock/offset/frame/tick expressions, `xml:space`, untimed spans, and `<br>`. Canonical TTML output intentionally contains cue text and timing only.
 
-Same-format TTML rewriting is refused because flattening an arbitrary TTML document would otherwise discard styling, layout, metadata, and inline semantics. Convert TTML to SRT/WebVTT, or generate a new canonical TTML file from another format. The exact supported subset is documented in [formats](docs/formats.md).
-
-## Reusable GitHub Action
-
-```yaml
-name: Subtitle quality
-on: [pull_request]
-
-permissions:
-  contents: read
-  security-events: write
-
-jobs:
-  subtitleops:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-      - uses: jerry0327/SubtitleOps@main # pin a release tag or commit in production
-        with:
-          paths: |
-            subtitles/
-            trailers/captions.vtt
-          upload-sarif: "true"
-          fail-on: warning
-```
-
-The action exposes `exit-code`, `files-checked`, `issues`, and `report-path` outputs. It writes a job summary, always creates SARIF when checking starts successfully, optionally uploads that report, and then applies the standard `0/1/2` exit contract. See [GitHub Action](docs/github-action.md).
+Same-format TTML rewriting is refused because flattening an arbitrary TTML document could discard styling, layout, metadata, and inline semantics. Convert TTML to SRT/WebVTT, or generate a new canonical TTML file from another format. The exact supported subset is documented in [formats](docs/formats.md).
 
 ## Rules
 
@@ -192,19 +215,17 @@ raise SystemExit(report.exit_code())
 
 `parse_srt`, `parse_vtt`, `parse_ttml`, document-aware WebVTT APIs, renderers, and `lint_cues` are also exported.
 
-## Development
+## Project and maintenance
 
-```bash
-git clone https://github.com/jerry0327/SubtitleOps.git
-cd SubtitleOps
-python -m pip install -e ".[dev]"
-python -m unittest discover -s tests -v
-python -m compileall -q src tests scripts
-subtitleops check examples/ --no-config
-python -m build
-```
+- [Project brief](docs/project-brief.md): problem, intended users, current evidence, and adoption status.
+- [Architecture](docs/design.md): deterministic and safety constraints.
+- [Roadmap](ROADMAP.md): planned 0.x increments and 1.0 criteria.
+- [Governance](GOVERNANCE.md): maintainer roles and decision process.
+- [Maintainer playbook](docs/maintainer-playbook.md): triage, review, dependency, and release workflows.
+- [Support](SUPPORT.md) and [security](SECURITY.md): public and private reporting paths.
+- [Contributing](CONTRIBUTING.md) and [code of conduct](CODE_OF_CONDUCT.md).
 
-The suite includes deterministic seeded round-trip tests, malformed-input isolation, format-specific fixtures, file-size boundaries, action-runner behavior, JSON/SARIF contracts, and packaging checks.
+The project is newly public and does not claim external adoption, downloads, or ecosystem-critical status without verifiable evidence. Public users can submit an adoption report without sharing private subtitle data.
 
 ## Design constraints
 
@@ -215,12 +236,6 @@ The suite includes deterministic seeded round-trip tests, malformed-input isolat
 5. **Untrusted input:** malformed XML/text is isolated and unsafe TTML declarations are rejected.
 6. **No opaque scoring:** all checks are explainable and reproducible.
 
-See [architecture](docs/design.md), [contributing](CONTRIBUTING.md), [security](SECURITY.md), and the [code of conduct](CODE_OF_CONDUCT.md).
+## License and citation
 
-## Roadmap
-
-Likely next increments are baseline/diff-aware adoption, configurable rule profiles, semantic-preserving line reflow, and broader TTML profile coverage. These are roadmap items, not current capabilities.
-
-## License
-
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE). Citation metadata is provided in [CITATION.cff](CITATION.cff).
