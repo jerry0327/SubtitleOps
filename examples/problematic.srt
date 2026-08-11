@@ -1,0 +1,7 @@
+1
+00:00:01,000 --> 00:00:03,000
+This line is deliberately much longer than a typical subtitle line should be for comfortable reading.
+
+2
+00:00:02,700 --> 00:00:03,200
+This cue overlaps and is also far too dense for its short duration.

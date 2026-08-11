@@ -1,0 +1,7 @@
+1
+00:00:01,000 --> 00:00:03,000
+A concise, readable subtitle.
+
+2
+00:00:03,300 --> 00:00:05,500
+SubtitleOps keeps simple files simple.
