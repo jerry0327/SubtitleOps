@@ -21,7 +21,7 @@ jobs:
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: actions/setup-python@v7
@@ -69,7 +69,7 @@ jobs:
     name: Composite action self-test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - id: subtitleops
@@ -106,7 +106,7 @@ jobs:
     needs: [test, action-smoke]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: actions/setup-python@v7
