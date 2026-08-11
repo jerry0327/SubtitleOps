@@ -5,13 +5,14 @@ from dataclasses import dataclass, replace
 
 @dataclass(frozen=True, slots=True)
 class Cue:
-    """A subtitle cue with millisecond timing."""
+    """A subtitle cue with millisecond timing and optional source location."""
 
     start_ms: int
     end_ms: int
     text: str
     identifier: str | None = None
     settings: str | None = None
+    source_line: int | None = None
 
     @property
     def duration_ms(self) -> int:

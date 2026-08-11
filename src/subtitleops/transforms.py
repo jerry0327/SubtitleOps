@@ -20,13 +20,24 @@ def normalize_text(cues: Iterable[Cue]) -> list[Cue]:
 
 
 def shift_cues(cues: Iterable[Cue], offset_ms: int) -> tuple[list[Cue], int]:
-    """Shift all cues while preserving durations and preventing negative timestamps."""
+    """Shift all cues while preserving durations and preventing negative timestamps.
+
+    Returns the transformed cues and the effective offset. If a negative shift would
+    move the first cue before zero, the shift is clipped for the entire track.
+    """
     cue_list = list(cues)
     if not cue_list or offset_ms == 0:
         return cue_list, offset_ms
     earliest = min(cue.start_ms for cue in cue_list)
     effective = max(offset_ms, -earliest)
-    return [cue.with_timing(start_ms=cue.start_ms + effective, end_ms=cue.end_ms + effective) for cue in cue_list], effective
+    shifted = [
+        cue.with_timing(
+            start_ms=cue.start_ms + effective,
+            end_ms=cue.end_ms + effective,
+        )
+        for cue in cue_list
+    ]
+    return shifted, effective
 
 
 def resolve_overlaps(cues: Iterable[Cue], *, min_duration_ms: int = 100) -> tuple[list[Cue], int]:

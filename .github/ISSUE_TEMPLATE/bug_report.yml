@@ -1,0 +1,36 @@
+name: Bug report
+description: Report a reproducible SubtitleOps problem.
+title: "[bug] "
+labels: [bug]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Include the exact command, exit code, and observed behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: sample
+    attributes:
+      label: Minimal subtitle sample
+      description: Remove private, identifying, or copyrighted content where possible.
+      render: text
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant configuration
+      description: Paste only the relevant .subtitleops.toml or [tool.subtitleops] settings.
+      render: toml
+  - type: input
+    id: version
+    attributes:
+      label: SubtitleOps version
+      placeholder: "0.2.0"
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python and operating system
+      placeholder: "Python 3.13 / Ubuntu 24.04"
