@@ -11,3 +11,7 @@ htmlcov/
 .DS_Store
 .idea/
 .vscode/
+
+# SubtitleOps generated reports
+*.sarif
+subtitleops.json

@@ -1,181 +1,242 @@
 # SubtitleOps
 
 [![CI](https://github.com/jerry0327/SubtitleOps/actions/workflows/ci.yml/badge.svg)](https://github.com/jerry0327/SubtitleOps/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/jerry0327/SubtitleOps/actions/workflows/codeql.yml/badge.svg)](https://github.com/jerry0327/SubtitleOps/actions/workflows/codeql.yml)
 
-**SubtitleOps** is a dependency-light Python CLI and library for checking and repairing subtitle files in automation pipelines.
+**SubtitleOps** is a deterministic subtitle quality gate for SRT and WebVTT files. It checks single files or entire directory trees, produces text, JSON, or SARIF reports, and performs conservative normalization and timing repairs without rewriting dialogue.
 
-It focuses on deterministic operations that are safe to run in CI, batch jobs, media pipelines, and pre-release checks: parse subtitles, flag common timing/readability problems, normalize files, repair simple overlaps, shift timing, and convert between SRT and WebVTT.
+It is designed for the operational layer between transcription and publication: CI checks, batch media pipelines, localization handoff, generated-caption validation, and pre-release quality control.
 
-> Status: early alpha. The command surface is usable, but format coverage and lint rules will grow before a 1.0 release.
+> **Status:** `0.2.0` alpha. The CLI is usable and tested on Python 3.10–3.14, but public APIs and rule defaults may still evolve before 1.0.
 
-## Why SubtitleOps?
+## What it does
 
-Subtitle tooling is often either a GUI editor or a large media stack. SubtitleOps targets the smaller operational layer between transcription and publishing:
+- recursively discovers `.srt` and `.vtt` files with include/exclude globs;
+- checks files concurrently while preserving deterministic output order;
+- isolates parse and decode failures so one damaged file does not hide results from the rest of a batch;
+- reports stable diagnostic codes for timing, structure, readability, and formatting;
+- emits aggregate **JSON** for automation and **SARIF 2.1.0** for code-scanning systems;
+- reads project settings from `.subtitleops.toml` or `[tool.subtitleops]` in `pyproject.toml`;
+- normalizes whitespace, shifts timing, repairs safe adjacent overlaps, and converts SRT ↔ WebVTT;
+- uses only the Python standard library on 3.11+; Python 3.10 installs the small `tomli` compatibility package.
 
-- fail CI when a subtitle track contains structural or timing problems;
-- produce machine-readable lint output for other tools;
-- normalize generated subtitles before diffing or committing them;
-- perform conservative timing repairs without rewriting dialogue;
-- convert common text subtitle formats without pulling in a multimedia runtime.
-
-## Features
-
-- SRT and WebVTT parsing/rendering
-- lint rules for:
-  - invalid or reversed timing;
-  - negative starts;
-  - out-of-order cues;
-  - overlapping cues;
-  - empty cues;
-  - excessive reading speed (characters per second);
-  - long lines and too many lines;
-- JSON lint output
-- whitespace normalization
-- global timing shift with negative-time protection
-- conservative overlap repair
-- SRT ↔ WebVTT conversion
-- no runtime dependencies
-- standard-library unit tests and GitHub Actions CI
+SubtitleOps deliberately does **not** perform speech recognition, translation, dialogue rewriting, or media-container muxing. Those jobs belong to other pipeline stages.
 
 ## Install
 
-From a local checkout:
+From a checkout:
 
 ```bash
 python -m pip install -e .
-```
-
-Then verify the CLI:
-
-```bash
 subtitleops --version
 ```
 
-Python 3.10+ is supported.
-
-## Quick start
-
-### Check a file
+For development and package-building tools:
 
 ```bash
-subtitleops check subtitles.srt
+python -m pip install -e ".[dev]"
 ```
 
-A clean file exits with status `0`. A file with lint findings exits with status `1`; parse or I/O failures exit with status `2`.
+## Check subtitles
 
-Customize readability limits:
+### One file
 
 ```bash
-subtitleops check subtitles.srt --max-cps 18 --max-line-length 40 --max-lines 2
+subtitleops check subtitles/en.srt
 ```
 
-Machine-readable output:
+### A directory tree
 
 ```bash
-subtitleops check subtitles.srt --json
+subtitleops check subtitles/
 ```
 
-Example shape:
+Multiple inputs are accepted and duplicate paths are de-duplicated:
 
-```json
-{
-  "file": "subtitles.srt",
-  "cues": 24,
-  "issues": [
-    {
-      "code": "OVERLAP",
-      "severity": "error",
-      "cue": 8,
-      "message": "overlaps previous cue by 120 ms"
-    }
-  ]
-}
+```bash
+subtitleops check captions/ trailers/ release-notes.vtt --jobs 8
 ```
 
-### Normalize or repair
+Useful controls:
 
-Normalize whitespace and rewrite a canonical subtitle file:
+```bash
+subtitleops check subtitles/ \
+  --max-cps 18 \
+  --max-line-length 40 \
+  --max-lines 2 \
+  --min-duration-ms 300 \
+  --max-duration-ms 7000 \
+  --exclude "archive/**" \
+  --ignore TRAILING_WHITESPACE
+```
+
+`--no-recursive` limits directory discovery to the immediate directory. `--include` replaces the configured include patterns; `--exclude` adds patterns to the configured exclusions. `--jobs 0` selects a bounded automatic worker count.
+
+## Reports
+
+### JSON
+
+```bash
+subtitleops check subtitles/ --json -o build/subtitleops.json
+```
+
+The JSON envelope contains tool/schema versions, configuration source, aggregate counts, discovery errors, per-file parse state, cues, and structured findings. Use `-o -` when an explicit stdout target is useful in scripts.
+
+### SARIF
+
+```bash
+subtitleops check subtitles/ --sarif -o build/subtitleops.sarif
+```
+
+SARIF results include stable rule IDs, severity, artifact URI, source line where available, cue number, cue timing, and deterministic partial fingerprints for cross-run tracking. See [docs/ci.md](docs/ci.md) for GitHub Code Scanning integration and [docs/reporting.md](docs/reporting.md) for the report contract.
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Check completed and no finding met the configured failure threshold. |
+| `1` | Check completed and at least one finding met `fail_on`. |
+| `2` | Configuration, discovery, decoding, parsing, or I/O failed. |
+
+The threshold can be changed without suppressing findings:
+
+```bash
+subtitleops check subtitles/ --fail-on error
+subtitleops check subtitles/ --fail-on none
+```
+
+Operational failures still return `2`.
+
+## Configuration
+
+SubtitleOps searches from the current directory upward for the nearest `.subtitleops.toml`, then for a `pyproject.toml` containing `[tool.subtitleops]`.
+
+```toml
+version = 1
+
+[check]
+max_cps = 18.0
+max_line_length = 40
+max_lines = 2
+min_duration_ms = 300
+max_duration_ms = 7000
+fail_on = "warning"
+ignore = ["TRAILING_WHITESPACE"]
+include = ["*.srt", "*.vtt"]
+exclude = ["vendor/**", "archive/**"]
+recursive = true
+jobs = 0
+allow_empty = false
+```
+
+The equivalent `pyproject.toml` location is `[tool.subtitleops.check]`. Command-line values override file settings. Use `--config PATH` to select a file explicitly or `--no-config` for reproducible default-only execution.
+
+Full details: [docs/configuration.md](docs/configuration.md).
+
+## Rules
+
+List lint rule metadata:
+
+```bash
+subtitleops rules
+subtitleops rules --json
+subtitleops rules --all
+```
+
+The current rules cover:
+
+- reversed/negative/out-of-order timing and overlaps;
+- minimum and maximum cue duration;
+- reading speed, line length, and line count;
+- empty text, trailing whitespace, control characters, and duplicate identifiers.
+
+Every code and default severity is documented in [docs/rules.md](docs/rules.md). Codes are intended for automation and will not be silently repurposed to mean unrelated conditions.
+
+## Normalize or repair
+
+Normalize edge whitespace and write canonical output:
 
 ```bash
 subtitleops fix subtitles.srt -o normalized.srt
 ```
 
-Shift the entire track by 750 ms:
+Shift the entire track while preventing negative timestamps:
 
 ```bash
 subtitleops fix subtitles.srt -o shifted.srt --shift-ms 750
 ```
 
-Resolve simple adjacent overlaps by clipping the earlier cue when the result remains valid:
+Resolve simple adjacent overlaps by clipping the earlier cue only when the `--min-duration-ms` repair minimum remains valid:
 
 ```bash
 subtitleops fix subtitles.srt -o repaired.srt --resolve-overlaps
 ```
 
-### Convert formats
+Repairs are conservative and opt-in. SubtitleOps does not invent wording or semantic line breaks.
+Output files are written by atomic replacement so an interrupted command does not leave a partially written subtitle or report; in-place fixes preserve the existing permission mode when the platform permits it.
+
+## Convert formats
 
 ```bash
 subtitleops convert subtitles.srt subtitles.vtt
 subtitleops convert subtitles.vtt subtitles.srt
 ```
 
-## Use as a Python library
+SRT output is renumbered. Supported WebVTT cue identifiers and settings are preserved; document-level `STYLE`, `REGION`, and `NOTE` blocks are recognized and skipped, not round-tripped.
+
+## Python API
 
 ```python
-from subtitleops import lint_cues, parse_srt
+from pathlib import Path
 
-with open("subtitles.srt", encoding="utf-8-sig") as handle:
-    cues = parse_srt(handle.read())
+from subtitleops import CheckConfig, run_check
 
-for issue in lint_cues(cues, max_cps=18):
-    print(issue.code, issue.cue, issue.message)
+report = run_check(
+    [Path("subtitles")],
+    CheckConfig(max_cps=18.0, fail_on="error", jobs=4),
+)
+
+for file in report.files:
+    for issue in file.issues:
+        print(file.path, issue.code, issue.cue, issue.message)
+
+raise SystemExit(report.exit_code())
 ```
 
-## Design principles
-
-1. **Deterministic first.** Given the same input and options, output should be reproducible.
-2. **Conservative repair.** SubtitleOps should not silently rewrite dialogue or guess semantic edits.
-3. **Pipeline-friendly.** Exit codes and JSON output are part of the product, not afterthoughts.
-4. **Dependency-light.** Core text-subtitle operations should not require ffmpeg or a large runtime.
-5. **Test malformed input.** Subtitle files in production are frequently imperfect; failure behavior should be explicit.
-
-See [docs/design.md](docs/design.md) for the current architecture and compatibility rules.
+The package also exports cue parsing/rendering and `lint_cues` for focused integrations.
 
 ## Development
 
 ```bash
 git clone https://github.com/jerry0327/SubtitleOps.git
 cd SubtitleOps
-python -m pip install -e .
+python -m pip install -e ".[dev]"
 python -m unittest discover -s tests -v
+python -m compileall -q src tests
+subtitleops check examples/clean.srt --no-config
+python -m build
 ```
 
-Try the bundled samples:
+The test suite covers parsing, source locations, rule behavior, configuration, recursive discovery, concurrency, batch error isolation, CLI compatibility, JSON, SARIF, transforms, and conversion.
 
-```bash
-subtitleops check examples/clean.srt
-subtitleops check examples/problematic.srt
-```
+## Design constraints
 
-The second command is expected to report findings and exit with status `1`.
+1. **Deterministic output:** file and finding order must not depend on thread scheduling.
+2. **Conservative mutation:** repairs must be explicit and must not rewrite dialogue.
+3. **Pipeline contracts:** exit codes, rule IDs, and machine-readable schemas are product surfaces.
+4. **Bounded dependencies:** text-subtitle checks must not require ffmpeg or a multimedia runtime.
+5. **Untrusted input:** malformed files fail explicitly and are isolated within batch reports.
+6. **No fabricated intelligence:** rules are explainable and reproducible rather than opaque scoring.
+
+See [docs/design.md](docs/design.md).
 
 ## Roadmap
 
-Near-term work is tracked in GitHub issues. Candidate directions include:
+The next likely increments are richer WebVTT document preservation, TTML/DFXP, configurable rule profiles, semantic-preserving line reflow, and fuzz/property testing. These are roadmap items, not current capabilities.
 
-- TTML/DFXP support;
-- richer WebVTT block preservation;
-- configurable rule profiles for broadcast/web/social workflows;
-- batch-directory checking with aggregate JSON/SARIF output;
-- semantic-preserving line reflow;
-- fuzz/property tests for malformed subtitle inputs;
-- stable public Python API documentation.
+## Contributing and security
 
-## Contributing
-
-Bug reports, format edge cases, tests, and narrowly scoped features are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-For security-sensitive reports, follow [SECURITY.md](SECURITY.md) rather than opening a public issue.
+See [CONTRIBUTING.md](CONTRIBUTING.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), and [SECURITY.md](SECURITY.md). Do not place private or copyrighted subtitle dialogue in public bug reports unless it is necessary and authorized.
 
 ## License
 

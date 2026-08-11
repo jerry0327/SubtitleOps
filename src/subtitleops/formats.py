@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Iterable, Literal
+from typing import Iterable, Literal, Sequence
 
 from .models import Cue
 
@@ -20,8 +20,7 @@ def detect_format(path: str | Path, explicit: str | None = None) -> SubtitleForm
     if explicit:
         fmt = explicit.lower().lstrip(".")
     else:
-        suffix = Path(path).suffix.lower().lstrip(".")
-        fmt = suffix
+        fmt = Path(path).suffix.lower().lstrip(".")
     if fmt not in {"srt", "vtt"}:
         raise SubtitleParseError("Could not determine subtitle format; use .srt/.vtt or --format")
     return fmt  # type: ignore[return-value]
@@ -51,25 +50,33 @@ def format_timestamp(value_ms: int, fmt: SubtitleFormat) -> str:
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{millis:03d}"
 
 
-def _split_blocks(text: str) -> list[list[str]]:
-    normalized = text.replace("\r\n", "\n").replace("\r", "\n").lstrip("\ufeff")
-    blocks: list[list[str]] = []
+def _normalized_lines(text: str) -> list[str]:
+    return text.replace("\r\n", "\n").replace("\r", "\n").lstrip("\ufeff").split("\n")
+
+
+def _split_blocks(lines: Sequence[str], *, first_line: int = 1) -> list[tuple[int, list[str]]]:
+    blocks: list[tuple[int, list[str]]] = []
     current: list[str] = []
-    for line in normalized.split("\n"):
+    current_start = first_line
+    for offset, line in enumerate(lines):
+        line_number = first_line + offset
         if line.strip() == "":
             if current:
-                blocks.append(current)
+                blocks.append((current_start, current))
                 current = []
+            current_start = line_number + 1
         else:
+            if not current:
+                current_start = line_number
             current.append(line)
     if current:
-        blocks.append(current)
+        blocks.append((current_start, current))
     return blocks
 
 
 def parse_srt(text: str) -> list[Cue]:
     cues: list[Cue] = []
-    for block_no, lines in enumerate(_split_blocks(text), start=1):
+    for block_no, (block_start, lines) in enumerate(_split_blocks(_normalized_lines(text)), start=1):
         timing_idx = next((i for i, line in enumerate(lines) if "-->" in line), None)
         if timing_idx is None:
             raise SubtitleParseError(f"SRT block {block_no} has no timing line")
@@ -80,19 +87,25 @@ def parse_srt(text: str) -> list[Cue]:
         start_ms = parse_timestamp(start_raw, "srt")
         end_ms = parse_timestamp(end_token, "srt")
         cue_text = "\n".join(lines[timing_idx + 1 :])
-        cues.append(Cue(start_ms, end_ms, cue_text, identifier=identifier))
+        cues.append(
+            Cue(
+                start_ms,
+                end_ms,
+                cue_text,
+                identifier=identifier,
+                source_line=block_start + timing_idx,
+            )
+        )
     return cues
 
 
 def parse_vtt(text: str) -> list[Cue]:
-    normalized = text.replace("\r\n", "\n").replace("\r", "\n").lstrip("\ufeff")
-    lines = normalized.split("\n")
+    lines = _normalized_lines(text)
     if not lines or not lines[0].strip().startswith("WEBVTT"):
         raise SubtitleParseError("WebVTT input must start with WEBVTT")
 
-    body = "\n".join(lines[1:])
     cues: list[Cue] = []
-    for block_no, block in enumerate(_split_blocks(body), start=1):
+    for block_no, (block_start, block) in enumerate(_split_blocks(lines[1:], first_line=2), start=1):
         if not block:
             continue
         first = block[0].strip()
@@ -111,7 +124,16 @@ def parse_vtt(text: str) -> list[Cue]:
         start_ms = parse_timestamp(start_raw, "vtt")
         end_ms = parse_timestamp(end_raw, "vtt")
         cue_text = "\n".join(block[timing_idx + 1 :])
-        cues.append(Cue(start_ms, end_ms, cue_text, identifier=identifier, settings=settings))
+        cues.append(
+            Cue(
+                start_ms,
+                end_ms,
+                cue_text,
+                identifier=identifier,
+                settings=settings,
+                source_line=block_start + timing_idx,
+            )
+        )
     return cues
 
 

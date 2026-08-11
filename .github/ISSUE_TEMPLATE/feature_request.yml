@@ -1,0 +1,39 @@
+name: Feature request
+description: Propose a format, lint rule, repair, report, or workflow improvement.
+title: "[feature] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Describe the concrete subtitle workflow or failure mode.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Include example input, output, rule code, or CLI shape where practical.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Parsing or rendering
+        - Lint rule
+        - Transform or repair
+        - Batch discovery
+        - JSON or SARIF reporting
+        - Configuration
+        - CI or packaging
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Compatibility or data-safety considerations
+      description: Note possible false positives, data loss, schema changes, or migration needs.

@@ -1,34 +1,42 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "subtitleops"
-version = "0.1.0"
-description = "Dependency-light CLI and Python toolkit for linting, normalizing, repairing, and converting subtitle files."
+version = "0.2.0"
+description = "Deterministic subtitle quality gates for SRT and WebVTT files, directories, and CI pipelines."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "SubtitleOps contributors" }]
-keywords = ["subtitles", "srt", "webvtt", "captions", "lint"]
+keywords = ["subtitles", "srt", "webvtt", "captions", "lint", "sarif", "ci"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Console",
-  "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Multimedia :: Video",
   "Topic :: Software Development :: Quality Assurance",
 ]
-dependencies = []
+dependencies = [
+  "tomli>=2.0.1; python_version < '3.11'",
+]
+
+[project.optional-dependencies]
+dev = ["build>=1.2,<2"]
 
 [project.urls]
 Homepage = "https://github.com/jerry0327/SubtitleOps"
 Repository = "https://github.com/jerry0327/SubtitleOps"
 Issues = "https://github.com/jerry0327/SubtitleOps/issues"
+Changelog = "https://github.com/jerry0327/SubtitleOps/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/jerry0327/SubtitleOps/tree/main/docs"
 
 [project.scripts]
 subtitleops = "subtitleops.cli:main"
@@ -38,3 +46,20 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+subtitleops = ["py.typed"]
+
+[tool.subtitleops]
+version = 1
+
+[tool.subtitleops.check]
+max_cps = 20.0
+max_line_length = 42
+max_lines = 2
+min_duration_ms = 300
+max_duration_ms = 7000
+fail_on = "warning"
+recursive = true
+jobs = 0
+allow_empty = false

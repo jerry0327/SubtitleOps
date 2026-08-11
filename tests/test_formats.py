@@ -31,6 +31,33 @@ class FormatTests(unittest.TestCase):
         with self.assertRaises(SubtitleParseError):
             parse_srt("1\n00:61:00,000 --> 00:00:02,000\nBad\n")
 
+    def test_source_line_tracks_timing_line(self):
+        cues = parse_srt(
+            "\ufeff1\r\n00:00:00,000 --> 00:00:01,000\r\nOne\r\n\r\n"
+            "2\r\n00:00:02,000 --> 00:00:03,000\r\nTwo\r\n"
+        )
+        self.assertEqual([cue.source_line for cue in cues], [2, 6])
+
+    def test_webvtt_skips_note_style_and_region_blocks(self):
+        text = """WEBVTT
+
+NOTE comment
+ignored
+
+STYLE
+::cue { color: white; }
+
+REGION
+id:fred
+
+00:00:01.000 --> 00:00:02.000
+Visible
+"""
+        cues = parse_vtt(text)
+        self.assertEqual(len(cues), 1)
+        self.assertEqual(cues[0].text, "Visible")
+        self.assertEqual(cues[0].source_line, 12)
+
 
 if __name__ == "__main__":
     unittest.main()

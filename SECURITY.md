@@ -8,7 +8,9 @@ SubtitleOps is currently pre-1.0. Security fixes are applied to the latest relea
 
 Please do **not** publish exploit details in a public GitHub issue.
 
-Use GitHub's private vulnerability reporting feature for this repository when available. Include:
+Use GitHub's private vulnerability reporting feature for this repository when available. If GitHub does not offer a private report form, open a public issue containing only a request for a private contact channel—do not include exploit details, sensitive samples, or secrets.
+
+A useful private report includes:
 
 - affected version/commit;
 - a minimal reproducer;
