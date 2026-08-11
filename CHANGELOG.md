@@ -16,14 +16,20 @@ SubtitleOps follows semantic versioning once public releases begin. Before 1.0, 
 - configurable `max_file_bytes` bounded reads with `FILE_TOO_LARGE` operational diagnostics;
 - reusable composite GitHub Action with SARIF generation, optional Code Scanning upload, job summary, and structured outputs;
 - seeded deterministic format round-trip tests and dedicated TTML, file-I/O, and action-runner regression suites;
-- format support and GitHub Action documentation.
+- format support and GitHub Action documentation;
+- governance, support, roadmap, citation, adoption, project-brief, and maintainer-playbook documentation;
+- a public adoption-report issue form and repository-wide CODEOWNERS policy;
+- repository metadata/link validation and Windows/macOS compatibility jobs in CI.
 
 ### Changed
 
 - default discovery includes `.ttml` and `.dfxp`;
 - package description and keywords include TTML/DFXP;
 - `fix` and `convert` accept `--max-file-bytes`;
-- CI checks SRT, WebVTT, and TTML, validates conversion, and executes the repository's own composite action;
+- CI checks SRT, WebVTT, and TTML, validates conversion, executes the repository's own composite action, and tests Python 3.12 on Windows and macOS;
+- GitHub Actions dependencies use the current v7 checkout and setup-python major releases;
+- public examples pin the immutable `v0.3.0` action tag instead of recommending `main`;
+- the release workflow validates repository metadata and maintains a compatible floating `v0` action tag;
 - version advanced to `0.3.0`.
 
 ### Safety and compatibility
