@@ -34,18 +34,23 @@ jobs:
           python -m pip check
       - name: Unit tests
         run: python -m unittest discover -s tests -v
-      - name: Compile package and tests
-        run: python -m compileall -q src tests
+      - name: Compile package, tests, and action runner
+        run: python -m compileall -q src tests scripts
       - name: CLI smoke tests
         run: |
           subtitleops --version
           subtitleops rules --json > /tmp/rules.json
-          subtitleops check examples/clean.srt examples/clean.vtt --no-config
+          subtitleops check examples/clean.srt examples/clean.vtt examples/clean.ttml --no-config
+          subtitleops convert examples/clean.srt /tmp/clean.ttml
+          subtitleops convert /tmp/clean.ttml /tmp/clean.vtt
+          subtitleops check /tmp/clean.ttml /tmp/clean.vtt --no-config
       - name: Validate machine-readable reports
         run: |
           mkdir -p build/ci
-          subtitleops check examples/clean.srt --json --no-config -o build/ci/subtitleops.json
-          subtitleops check examples/clean.srt --sarif --no-config -o build/ci/subtitleops.sarif
+          subtitleops check examples/clean.srt examples/clean.vtt examples/clean.ttml \
+            --json --no-config -o build/ci/subtitleops.json
+          subtitleops check examples/clean.srt examples/clean.vtt examples/clean.ttml \
+            --sarif --no-config -o build/ci/subtitleops.sarif
           python - <<'PY'
           import json
           from pathlib import Path
@@ -53,14 +58,52 @@ jobs:
           json_report = json.loads(Path("build/ci/subtitleops.json").read_text())
           sarif = json.loads(Path("build/ci/subtitleops.sarif").read_text())
           assert json_report["schema_version"] == 1
+          assert json_report["summary"]["files_checked"] == 3
+          assert {item["format"] for item in json_report["files"]} == {"srt", "vtt", "ttml"}
           assert json_report["summary"]["exit_code"] == 0
           assert sarif["version"] == "2.1.0"
           assert sarif["runs"][0]["invocations"][0]["exitCode"] == 0
           PY
 
+  action-smoke:
+    name: Composite action self-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: subtitleops
+        uses: ./
+        with:
+          paths: |
+            examples/clean.srt
+            examples/clean.vtt
+            examples/clean.ttml
+          no-config: "true"
+          report-path: build/action/subtitleops.sarif
+          upload-sarif: "false"
+      - name: Validate action outputs
+        env:
+          EXIT_CODE: ${{ steps.subtitleops.outputs.exit-code }}
+          FILES_CHECKED: ${{ steps.subtitleops.outputs.files-checked }}
+          ISSUES: ${{ steps.subtitleops.outputs.issues }}
+          REPORT_PATH: ${{ steps.subtitleops.outputs.report-path }}
+        run: |
+          test "$EXIT_CODE" = "0"
+          test "$FILES_CHECKED" = "3"
+          test "$ISSUES" = "0"
+          test "$REPORT_PATH" = "build/action/subtitleops.sarif"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("build/action/subtitleops.sarif").read_text())
+          assert report["version"] == "2.1.0"
+          assert report["runs"][0]["invocations"][0]["exitCode"] == 0
+          PY
+
   package:
     name: Build and smoke-install package
-    needs: test
+    needs: [test, action-smoke]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -74,6 +117,26 @@ jobs:
         run: |
           python -m pip install "build>=1.2,<2"
           python -m build
+      - name: Validate distribution contents
+        run: |
+          python - <<'PY'
+          import tarfile
+          import zipfile
+          from pathlib import Path
+
+          wheel = next(Path("dist").glob("*.whl"))
+          sdist = next(Path("dist").glob("*.tar.gz"))
+          with zipfile.ZipFile(wheel) as archive:
+              names = set(archive.namelist())
+              assert "subtitleops/formats.py" in names
+              assert "subtitleops/fileio.py" in names
+              assert "subtitleops/py.typed" in names
+          with tarfile.open(sdist) as archive:
+              names = {name.split("/", 1)[-1] for name in archive.getnames() if "/" in name}
+              assert "action.yml" in names
+              assert "scripts/action_runner.py" in names
+              assert "docs/formats.md" in names
+          PY
       - name: Smoke-install wheel in clean environment
         run: |
           python -m venv .wheel-smoke
@@ -81,7 +144,9 @@ jobs:
           .wheel-smoke/bin/python -m pip check
           .wheel-smoke/bin/subtitleops --version
           .wheel-smoke/bin/subtitleops rules --json > /tmp/wheel-rules.json
-          .wheel-smoke/bin/subtitleops check examples/clean.srt examples/clean.vtt --no-config
+          .wheel-smoke/bin/subtitleops check examples/clean.srt examples/clean.vtt examples/clean.ttml --no-config
+          .wheel-smoke/bin/subtitleops convert examples/clean.srt /tmp/wheel-clean.ttml
+          .wheel-smoke/bin/subtitleops check /tmp/wheel-clean.ttml --no-config
       - uses: actions/upload-artifact@v7
         with:
           name: subtitleops-distributions
