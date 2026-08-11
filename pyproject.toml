@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "subtitleops"
+version = "0.1.0"
+description = "Dependency-light CLI and Python toolkit for linting, normalizing, repairing, and converting subtitle files."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "SubtitleOps contributors" }]
+keywords = ["subtitles", "srt", "webvtt", "captions", "lint"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Multimedia :: Video",
+  "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/jerry0327/SubtitleOps"
+Repository = "https://github.com/jerry0327/SubtitleOps"
+Issues = "https://github.com/jerry0327/SubtitleOps/issues"
+
+[project.scripts]
+subtitleops = "subtitleops.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
