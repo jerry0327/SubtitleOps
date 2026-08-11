@@ -1,163 +1,78 @@
 # SubtitleOps architecture and contracts
 
-SubtitleOps is organized as small layers with explicit data flow:
-
 ```text
-inputs -> discovery -> decode/parse -> lint -> aggregate -> text/JSON/SARIF
-                         |                         |
-                         +-> transforms/render ----+
+inputs -> discovery -> bounded read -> parse document -> lint cues -> aggregate -> text/JSON/SARIF
+                                           |                              |
+                                           +-> transforms/render ----------+
 ```
 
-The separation is intentional: discovery and reporting can evolve without coupling format parsing to filesystem or CI concerns.
+## Cue and document models
 
-## 1. Cue model
+`Cue` is immutable and stores millisecond timing, text, optional identifier/settings, and an optional source line. Integer milliseconds avoid floating-point drift.
 
-`subtitleops.models.Cue` is immutable and stores:
+`SubtitleDocument` wraps a cue tuple and format-level state. SRT and TTML currently use cue-only documents. WebVTT additionally stores signature/header lines and typed document blocks with a cue-relative insertion position.
 
-- `start_ms` and `end_ms` as integer milliseconds;
-- `text` with preserved cue line boundaries;
-- optional cue `identifier` and WebVTT `settings`;
-- optional `source_line` for diagnostics.
+Transforms return new cues. `SubtitleDocument.with_cues` lets same-format WebVTT rendering preserve document-level data while replacing only transformed cues.
 
-Integer milliseconds avoid floating-point drift during repeated shifts and repairs. Transform functions return new cue objects rather than mutating caller-owned values.
+## Format layer
 
-## 2. Formats
+`formats.py` owns detection, timestamp handling, parsing, and rendering.
 
-`subtitleops.formats` owns SRT and WebVTT parsing/rendering.
+- SRT and WebVTT parsing is line/block based.
+- TTML parsing uses the standard-library XML parser after rejecting `DOCTYPE`/`ENTITY` declarations.
+- TTML timing is resolved recursively under parallel containers.
+- Canonical TTML rendering is cue-only and sets `xml:space="preserve"` for deterministic text round trips.
+- Same-format TTML mutation is rejected at the CLI boundary because the document model cannot promise lossless styling/layout preservation.
 
-Current guarantees:
+See [formats.md](formats.md).
 
-- the CLI accepts UTF-8 and UTF-8 BOM input;
-- CRLF and CR input are normalized during parsing;
-- rendered output uses LF newlines;
-- SRT output is renumbered deterministically;
-- supported WebVTT identifiers and cue settings survive parse/render;
-- malformed timestamps raise `SubtitleParseError` instead of being guessed;
-- timing-line source locations are retained for diagnostics.
+## Bounded I/O
 
-WebVTT `NOTE`, `STYLE`, and `REGION` blocks are skipped in the current cue-only representation. They are not silently claimed to round-trip. A future document model is required before arbitrary document-level blocks can be preserved correctly.
+`fileio.py` centralizes UTF-8/BOM reads and atomic writes.
 
-## 3. Rule registry and linting
+A positive `max_file_bytes` reads at most `limit + 1` bytes, detects overflow before decoding, and raises `FileTooLargeError`. Setting the limit to zero opts out. Reports map this to stable `FILE_TOO_LARGE` operational diagnostics.
 
-`subtitleops.rules` is the canonical registry for diagnostic metadata. A rule has a code, name, default severity, category, description, and documentation URI.
+Writes use a same-directory temporary file, flush/fsync, optional mode preservation, and `os.replace`.
 
-`subtitleops.linting` is read-only. A `LintIssue` includes:
+## Discovery and checking
 
-- stable diagnostic code;
-- effective severity;
-- cue number and message;
-- optional source line;
-- cue start/end milliseconds.
+Discovery selects supported suffixes through include/exclude policy and does not follow directory symlinks. Resolved paths are de-duplicated and sorted.
 
-Rule codes may be added before 1.0, but existing codes must not be repurposed for unrelated behavior. Rule suppression removes a finding; `fail_on` changes only the exit threshold and leaves reports complete.
+Checking uses bounded reads, format detection, parsing, and linting. Threads are used for small filesystem-bound workloads; completion order is hidden by final sorting. A damaged file never suppresses results for other files.
 
-## 4. Configuration
+## Reporting and exit codes
 
-`subtitleops.config` loads a versioned TOML subset from either:
+Operational errors take precedence:
 
-- `.subtitleops.toml` using `[check]`; or
-- `pyproject.toml` using `[tool.subtitleops.check]`.
+- `0`: no finding reaches the threshold;
+- `1`: at least one finding reaches the threshold;
+- `2`: configuration/discovery/read/decode/parse/I/O failure.
 
-Configuration is validated strictly. Unknown keys, invalid types, impossible duration ranges, unsupported failure levels, and unknown rule codes are operational errors. This prevents misspellings from silently weakening a quality gate.
+JSON and SARIF are deterministic for unchanged inputs and options. No timestamps or random IDs are emitted.
 
-Precedence is:
+## Composite action
 
-1. built-in defaults;
-2. nearest discovered project configuration or explicit `--config`;
-3. command-line overrides.
+The action is intentionally a thin adapter:
 
-## 5. Discovery
+1. set up Python;
+2. install the action checkout as a package;
+3. run `scripts/action_runner.py` in the caller's selected working directory;
+4. optionally upload SARIF;
+5. apply the recorded SubtitleOps exit code.
 
-`subtitleops.discovery` accepts files and directories.
+The runner always exits zero internally so SARIF upload and outputs are available before the final quality-gate step fails.
 
-Properties:
+## Security model
 
-- explicit files are retained even when supplied more than once;
-- resolved paths are de-duplicated;
-- directory files are selected by include and exclude globs;
-- directory symlinks are not followed;
-- default build, virtual-environment, cache, and Git directories are excluded;
-- final order is normalized and deterministic;
-- missing, unsupported, and empty inputs are represented as structured operational errors.
-
-Discovery does not parse files. That keeps path policy separate from subtitle syntax.
-
-## 6. Batch checking
-
-`subtitleops.checking` joins discovery, decoding, parsing, and linting.
-
-A `FileReport` contains a path, detected format, cue count, findings, and an optional operational error. A `BatchReport` contains ordered file reports plus input/discovery errors.
-
-Concurrency uses threads because the workload is dominated by small filesystem reads and parsing. Worker completion order is never exposed; results are sorted before reporting. One unreadable or malformed file does not prevent other discovered files from being checked.
-
-### Exit contract
-
-- `0`: no finding at or above `fail_on`, and no operational error;
-- `1`: checking completed and at least one finding reached `fail_on`;
-- `2`: configuration, discovery, decoding, parsing, or I/O produced an operational error.
-
-Operational errors take precedence over lint thresholds.
-
-## 7. Reporting
-
-`subtitleops.reporting` renders one `BatchReport` into:
-
-- deterministic human-readable text;
-- versioned JSON (`schema_version = 1`);
-- SARIF 2.1.0.
-
-Machine-readable output does not include timestamps or nondeterministic identifiers. Repeated runs over unchanged inputs and options should produce byte-equivalent output, except where absolute input paths necessarily differ.
-
-SARIF maps rule severities to `note`, `warning`, or `error`, includes rule metadata, source regions where available, and invocation status. Parse/discovery failures are represented as operational SARIF results rather than disappearing into stderr.
-
-## 8. Transforms
-
-Transforms remain separate from linting. CLI output is committed with atomic file replacement so interrupted writes do not leave partial deliverables. Existing permission bits are retained for in-place fixes when supported by the platform.
-
-### Whitespace normalization
-
-Only edge whitespace is normalized. Wording and line boundaries are not semantically rewritten.
-
-### Timing shift
-
-A negative shift is clipped globally when needed so the earliest cue starts at zero. Cue durations remain unchanged.
-
-### Overlap repair
-
-The earlier cue is clipped to the next cue's start only when the remaining duration meets `min_duration_ms`. Otherwise no edit is made and the overlap remains visible to `check`.
-
-## 9. CLI boundary
-
-`subtitleops.cli` is an adapter. It handles argument parsing, configuration precedence, output destination, and exit codes. Core parsing, linting, discovery, reporting, and batch execution remain importable without invoking the CLI.
-
-Compatibility retained from 0.1:
-
-- single-file `subtitleops check FILE`;
-- `check --json` alias;
-- `fix` and `convert` commands;
-- exit codes `0`, `1`, and `2`.
-
-## Security and resource model
-
-Subtitle files are untrusted text input. Current protections and constraints include:
-
-- no shell execution or media-codec invocation;
+- no shell execution from subtitle content;
+- no network access during checking;
+- no multimedia codec invocation;
 - UTF-8 decoding is explicit;
-- malformed files are isolated per input;
-- directory symlinks are not recursively followed;
-- all automatic fixes are bounded by parsed cue data;
-- no network access occurs during subtitle checking.
-
-The current parser reads each file into memory. A configurable maximum file-size guard is a candidate for a later release; callers processing adversarial, very large inputs should impose an upstream size limit today.
+- XML declarations capable of defining entities are rejected;
+- file reads are bounded by default;
+- directory symlinks are not traversed;
+- unsupported lossless mutations fail rather than discard data.
 
 ## Non-goals
 
-- speech recognition or diarization;
-- machine translation;
-- automatic dialogue rewriting;
-- media muxing/demuxing;
-- bitmap subtitle formats;
-- visual rendering comparison;
-- opaque AI quality scoring.
-
-SubtitleOps is intended to compose with those systems, not replace them.
+Speech recognition, translation, semantic rewriting, muxing, bitmap subtitles, browser/player rendering parity, full TTML presentation processing, and opaque AI scoring remain out of scope.

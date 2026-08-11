@@ -8,8 +8,10 @@ from typing import Iterable
 
 from .config import CheckConfig, validate_check_config
 from .discovery import DiscoveryError, discover_files
-from .formats import SubtitleFormat, SubtitleParseError, detect_format, parse_text
+from .fileio import FileTooLargeError, read_utf8
+from .formats import SubtitleParseError, detect_format, parse_text
 from .linting import LintIssue, lint_cues
+from .models import SubtitleFormat
 from .rules import SEVERITY_ORDER
 
 
@@ -77,15 +79,11 @@ class BatchReport:
         return 1 if any(SEVERITY_ORDER[issue.severity] >= rank for issue in self.issues) else 0
 
 
-def _read(path: Path) -> str:
-    return path.read_text(encoding="utf-8-sig")
-
-
 def _check_file(path: Path, config: CheckConfig, explicit_format: SubtitleFormat | None) -> FileReport:
     fmt: SubtitleFormat | None = None
     try:
         fmt = detect_format(path, explicit_format)
-        cues = parse_text(_read(path), fmt)
+        cues = parse_text(read_utf8(path, max_file_bytes=config.max_file_bytes), fmt)
         issues = lint_cues(
             cues,
             max_cps=config.max_cps,
@@ -96,6 +94,8 @@ def _check_file(path: Path, config: CheckConfig, explicit_format: SubtitleFormat
             ignore=config.ignore,
         )
         return FileReport(path, fmt, len(cues), tuple(issues))
+    except FileTooLargeError as exc:
+        return FileReport(path, fmt, 0, (), FileError("FILE_TOO_LARGE", str(exc)))
     except UnicodeError as exc:
         return FileReport(path, fmt, 0, (), FileError("DECODE_ERROR", str(exc)))
     except SubtitleParseError as exc:

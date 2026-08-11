@@ -9,9 +9,10 @@ try:  # Python 3.11+
 except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.10 CI
     import tomli as tomllib  # type: ignore[no-redef]
 
+from .fileio import DEFAULT_MAX_FILE_BYTES
 from .rules import LINT_RULE_CODES, SEVERITY_ORDER
 
-DEFAULT_INCLUDE = ("*.srt", "*.vtt")
+DEFAULT_INCLUDE = ("*.srt", "*.vtt", "*.ttml", "*.dfxp")
 DEFAULT_EXCLUDE = (
     ".git/**",
     "**/.git/**",
@@ -38,6 +39,7 @@ class CheckConfig:
     max_lines: int = 2
     min_duration_ms: int = 300
     max_duration_ms: int = 7000
+    max_file_bytes: int = DEFAULT_MAX_FILE_BYTES
     fail_on: str = "warning"
     ignore: tuple[str, ...] = ()
     include: tuple[str, ...] = DEFAULT_INCLUDE
@@ -80,6 +82,7 @@ def validate_check_config(config: CheckConfig) -> CheckConfig:
         "max_lines": config.max_lines,
         "min_duration_ms": config.min_duration_ms,
         "max_duration_ms": config.max_duration_ms,
+        "max_file_bytes": config.max_file_bytes,
         "jobs": config.jobs,
     }
     for key, value in integer_fields.items():
@@ -110,6 +113,8 @@ def validate_check_config(config: CheckConfig) -> CheckConfig:
         raise ConfigError("check.max_lines must be greater than zero")
     if normalized.min_duration_ms < 0 or normalized.max_duration_ms < 0:
         raise ConfigError("check duration limits cannot be negative")
+    if normalized.max_file_bytes < 0:
+        raise ConfigError("check.max_file_bytes cannot be negative")
     if (
         normalized.min_duration_ms
         and normalized.max_duration_ms
@@ -136,7 +141,14 @@ def _parse_check_table(table: Mapping[str, Any]) -> CheckConfig:
         if key in {"include", "exclude", "ignore"}:
             parsed = _as_string_tuple(value, key=f"check.{key}")
             values[key] = tuple(item.upper() for item in parsed) if key == "ignore" else parsed
-        elif key in {"max_line_length", "max_lines", "min_duration_ms", "max_duration_ms", "jobs"}:
+        elif key in {
+            "max_line_length",
+            "max_lines",
+            "min_duration_ms",
+            "max_duration_ms",
+            "max_file_bytes",
+            "jobs",
+        }:
             if not isinstance(value, int) or isinstance(value, bool):
                 raise ConfigError(f"check.{key} must be an integer")
             values[key] = value
@@ -208,10 +220,7 @@ def find_config(start: Path | None = None) -> Path | None:
             return dedicated
         pyproject = directory / "pyproject.toml"
         if pyproject.is_file():
-            try:
-                data = _read_toml(pyproject)
-            except ConfigError:
-                raise
+            data = _read_toml(pyproject)
             tool = data.get("tool", {})
             if isinstance(tool, dict) and "subtitleops" in tool:
                 return pyproject

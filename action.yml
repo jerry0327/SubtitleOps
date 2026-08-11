@@ -1,0 +1,106 @@
+name: SubtitleOps subtitle quality gate
+description: Check SRT, WebVTT, TTML, and DFXP subtitle files and optionally upload SARIF.
+author: SubtitleOps contributors
+branding:
+  icon: check-circle
+  color: blue
+
+inputs:
+  paths:
+    description: Newline-delimited files or directories to check.
+    required: false
+    default: .
+  config:
+    description: Explicit .subtitleops.toml or pyproject.toml path.
+    required: false
+    default: ""
+  no-config:
+    description: Disable upward configuration discovery.
+    required: false
+    default: "false"
+  format:
+    description: Force one input format (srt, vtt, or ttml).
+    required: false
+    default: ""
+  fail-on:
+    description: Failure threshold (info, warning, error, or none).
+    required: false
+    default: ""
+  allow-empty:
+    description: Treat zero discovered subtitle files as success.
+    required: false
+    default: ""
+  max-file-bytes:
+    description: Per-file bounded-read limit in bytes; 0 disables the guard.
+    required: false
+    default: ""
+  report-path:
+    description: SARIF output path relative to working-directory.
+    required: false
+    default: subtitleops.sarif
+  upload-sarif:
+    description: Upload the generated SARIF report to GitHub Code Scanning.
+    required: false
+    default: "false"
+  python-version:
+    description: Python version used to run SubtitleOps.
+    required: false
+    default: "3.12"
+  working-directory:
+    description: Directory in the caller repository where checks run.
+    required: false
+    default: .
+
+outputs:
+  exit-code:
+    description: SubtitleOps exit code (0 clean, 1 findings, 2 operational error).
+    value: ${{ steps.check.outputs.exit-code }}
+  files-checked:
+    description: Number of files checked successfully.
+    value: ${{ steps.check.outputs.files-checked }}
+  issues:
+    description: Number of lint findings.
+    value: ${{ steps.check.outputs.issues }}
+  report-path:
+    description: SARIF path supplied to the action.
+    value: ${{ steps.check.outputs.report-path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install SubtitleOps
+      shell: bash
+      run: python -m pip install "$GITHUB_ACTION_PATH"
+
+    - name: Check subtitles
+      id: check
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        SUBTITLEOPS_ACTION_PATHS: ${{ inputs.paths }}
+        SUBTITLEOPS_ACTION_CONFIG: ${{ inputs.config }}
+        SUBTITLEOPS_ACTION_NO_CONFIG: ${{ inputs.no-config }}
+        SUBTITLEOPS_ACTION_FORMAT: ${{ inputs.format }}
+        SUBTITLEOPS_ACTION_FAIL_ON: ${{ inputs.fail-on }}
+        SUBTITLEOPS_ACTION_ALLOW_EMPTY: ${{ inputs.allow-empty }}
+        SUBTITLEOPS_ACTION_MAX_FILE_BYTES: ${{ inputs.max-file-bytes }}
+        SUBTITLEOPS_ACTION_REPORT_PATH: ${{ inputs.report-path }}
+      run: python "$GITHUB_ACTION_PATH/scripts/action_runner.py"
+
+    - name: Upload SARIF
+      if: ${{ always() && inputs.upload-sarif == 'true' && steps.check.outputs.report-exists == 'true' }}
+      uses: github/codeql-action/upload-sarif@v4
+      with:
+        sarif_file: ${{ inputs.working-directory }}/${{ inputs.report-path }}
+
+    - name: Apply SubtitleOps exit code
+      if: ${{ always() }}
+      shell: bash
+      env:
+        SUBTITLEOPS_EXIT_CODE: ${{ steps.check.outputs.exit-code }}
+      run: exit "${SUBTITLEOPS_EXIT_CODE:-2}"

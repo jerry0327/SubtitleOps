@@ -1,44 +1,25 @@
 # CI integration
 
-SubtitleOps is designed to run as a quality gate after subtitle generation/localization and before publication.
+SubtitleOps has two CI entry points:
 
-## Basic GitHub Actions check
+1. the installed CLI, suitable for any CI system;
+2. the repository's composite GitHub Action, suitable for GitHub workflows.
 
-Until a package release is published, pin installation to a reviewed Git commit or tag rather than an unbounded branch.
+## CLI quality gate
 
 ```yaml
-name: Subtitle quality
-
-on:
-  pull_request:
-  push:
-    branches: [main]
-
-permissions:
-  contents: read
-
-jobs:
-  subtitleops:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.14"
-          cache: pip
-      - name: Install SubtitleOps
-        run: python -m pip install "subtitleops @ git+https://github.com/jerry0327/SubtitleOps.git@<PINNED_COMMIT>"
-      - name: Check subtitles
-        run: subtitleops check subtitles/ --config .subtitleops.toml
+- uses: actions/setup-python@v6
+  with:
+    python-version: "3.12"
+- run: python -m pip install .
+- run: subtitleops check subtitles/ --sarif -o build/subtitleops.sarif
 ```
 
-Replace `<PINNED_COMMIT>` with a reviewed immutable commit SHA.
+Exit `1` means lint findings met `fail_on`; exit `2` means an operational failure. Do not collapse these codes when downstream automation needs to distinguish content debt from broken inputs/configuration.
 
-## Upload SARIF to GitHub Code Scanning
+## GitHub Action
 
-The checker must be allowed to finish with exit `1` long enough for the SARIF upload step to run. Re-apply the failure after upload:
+See [github-action.md](github-action.md) for inputs and outputs.
 
 ```yaml
 permissions:
@@ -49,64 +30,30 @@ steps:
   - uses: actions/checkout@v6
     with:
       persist-credentials: false
-  - uses: actions/setup-python@v6
+  - uses: jerry0327/SubtitleOps@main
     with:
-      python-version: "3.14"
-  - run: python -m pip install "subtitleops @ git+https://github.com/jerry0327/SubtitleOps.git@<PINNED_COMMIT>"
-
-  - name: Run SubtitleOps
-    id: subtitleops
-    continue-on-error: true
-    run: subtitleops check subtitles/ --sarif -o subtitleops.sarif
-
-  - name: Upload SARIF
-    if: always() && hashFiles('subtitleops.sarif') != ''
-    uses: github/codeql-action/upload-sarif@v4
-    with:
-      sarif_file: subtitleops.sarif
-
-  - name: Enforce SubtitleOps result
-    if: steps.subtitleops.outcome == 'failure'
-    run: exit 1
+      paths: subtitles/
+      upload-sarif: "true"
+      fail-on: warning
 ```
 
-GitHub permissions for pull requests from forks can differ. Consult the repository's Code Scanning policy before enabling SARIF upload on untrusted fork events.
-
-## Preserve JSON as an artifact
+## Direct SARIF upload
 
 ```yaml
-- name: Generate aggregate report
-  id: subtitleops_json
-  continue-on-error: true
-  run: subtitleops check subtitles/ --json -o subtitleops.json
+permissions:
+  contents: read
+  security-events: write
 
-- uses: actions/upload-artifact@v7
-  if: always()
-  with:
-    name: subtitleops-report
-    path: subtitleops.json
-
-- if: steps.subtitleops_json.outcome == 'failure'
-  run: exit 1
+steps:
+  - run: subtitleops check subtitles/ --sarif -o build/subtitleops.sarif
+    continue-on-error: true
+  - uses: github/codeql-action/upload-sarif@v4
+    with:
+      sarif_file: build/subtitleops.sarif
 ```
 
-## Threshold rollout
+Use `continue-on-error` only to ensure the upload step runs; capture and re-apply the SubtitleOps exit code if the workflow must preserve the distinction between `1` and `2`. The composite action already performs this sequence.
 
-A staged adoption pattern avoids suppressing useful diagnostics:
+## Determinism
 
-1. begin with `fail_on = "error"` so warnings remain visible;
-2. fix or explicitly assess warning classes;
-3. move to `fail_on = "warning"` when the corpus is ready;
-4. reserve `ignore` for rules that are structurally inapplicable.
-
-Operational errors always return `2` and should not be downgraded.
-
-## Generated subtitle pipelines
-
-Recommended sequence:
-
-```text
-ASR/translation -> export SRT/VTT -> SubtitleOps check -> optional fix -> re-check -> publish
-```
-
-Run `check` after `fix`; conservative repair can resolve only specific timing conditions and does not guarantee a clean track.
+Reports omit run timestamps and random identifiers. Files are sorted after concurrent checking, findings remain in cue/rule evaluation order, and SARIF fingerprints use stable path/rule/cue/timing fields.

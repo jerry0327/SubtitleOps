@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "subtitleops"
-version = "0.2.0"
-description = "Deterministic subtitle quality gates for SRT and WebVTT files, directories, and CI pipelines."
+version = "0.3.0"
+description = "Deterministic subtitle quality gates for SRT, WebVTT, and TTML files, directories, and CI pipelines."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "SubtitleOps contributors" }]
-keywords = ["subtitles", "srt", "webvtt", "captions", "lint", "sarif", "ci"]
+keywords = ["subtitles", "srt", "webvtt", "ttml", "dfxp", "captions", "lint", "sarif", "ci"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Console",
@@ -59,6 +59,7 @@ max_line_length = 42
 max_lines = 2
 min_duration_ms = 300
 max_duration_ms = 7000
+max_file_bytes = 10485760
 fail_on = "warning"
 recursive = true
 jobs = 0

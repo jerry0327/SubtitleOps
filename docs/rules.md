@@ -1,108 +1,161 @@
-# Diagnostic rules
-
-Rule codes are automation-facing identifiers. Default severities may be overridden only by future documented functionality; they are listed here for the current release. Use `subtitleops rules --json` for machine-readable metadata.
-
-## Timing
+# SubtitleOps rule reference
 
 <a id="timing-order"></a>
-### `TIMING_ORDER` — error
+## `TIMING_ORDER` — Invalid timing order
 
-Cue end time is equal to or earlier than its start time. This is structurally invalid and blocks meaningful duration/readability calculations.
+- Default severity: `error`
+- Category: `timing`
+
+Cue end time is not after its start time.
 
 <a id="negative-start"></a>
-### `NEGATIVE_START` — error
+## `NEGATIVE_START` — Negative start time
+
+- Default severity: `error`
+- Category: `timing`
 
 Cue starts before timestamp zero.
 
 <a id="out-of-order"></a>
-### `OUT_OF_ORDER` — error
+## `OUT_OF_ORDER` — Out-of-order cue
 
-A cue starts before the preceding cue's start. This is distinct from overlap: two ordered cues can overlap without being out of order.
+- Default severity: `error`
+- Category: `timing`
+
+Cue starts before the preceding cue.
 
 <a id="overlap"></a>
-### `OVERLAP` — error
+## `OVERLAP` — Overlapping cues
 
-A cue starts before the preceding cue ends. `fix --resolve-overlaps` can clip the earlier cue only when the resulting duration remains above its repair minimum.
+- Default severity: `error`
+- Category: `timing`
 
-## Readability
+Adjacent cues overlap in time.
 
 <a id="duration-too-short"></a>
-### `DURATION_TOO_SHORT` — warning
+## `DURATION_TOO_SHORT` — Cue duration too short
 
-Positive cue duration is below `min_duration_ms`. Set the limit to `0` to disable this rule.
+- Default severity: `warning`
+- Category: `readability`
+
+Cue duration is below the configured minimum.
 
 <a id="duration-too-long"></a>
-### `DURATION_TOO_LONG` — warning
+## `DURATION_TOO_LONG` — Cue duration too long
 
-Cue duration exceeds `max_duration_ms`. Set the limit to `0` to disable this rule.
+- Default severity: `warning`
+- Category: `readability`
 
-<a id="reading-speed"></a>
-### `READING_SPEED` — warning
-
-Visible non-whitespace characters divided by cue duration exceeds `max_cps`. This is a deterministic character-rate measure, not language-aware reading-time prediction.
-
-<a id="line-too-long"></a>
-### `LINE_TOO_LONG` — warning
-
-At least one cue line exceeds `max_line_length` characters.
-
-<a id="too-many-lines"></a>
-### `TOO_MANY_LINES` — warning
-
-Cue line count exceeds `max_lines`.
-
-## Content and structure
+Cue duration exceeds the configured maximum.
 
 <a id="empty-text"></a>
-### `EMPTY_TEXT` — warning
+## `EMPTY_TEXT` — Empty cue
 
-Cue has no visible text after whitespace is ignored.
+- Default severity: `warning`
+- Category: `content`
+
+Cue contains no visible text.
+
+<a id="reading-speed"></a>
+## `READING_SPEED` — Reading speed too high
+
+- Default severity: `warning`
+- Category: `readability`
+
+Visible characters per second exceed the configured limit.
+
+<a id="line-too-long"></a>
+## `LINE_TOO_LONG` — Subtitle line too long
+
+- Default severity: `warning`
+- Category: `readability`
+
+A cue line exceeds the configured character limit.
+
+<a id="too-many-lines"></a>
+## `TOO_MANY_LINES` — Too many subtitle lines
+
+- Default severity: `warning`
+- Category: `readability`
+
+A cue contains more lines than configured.
 
 <a id="trailing-whitespace"></a>
-### `TRAILING_WHITESPACE` — warning
+## `TRAILING_WHITESPACE` — Trailing whitespace
 
-At least one cue line ends in spaces or tabs. `fix` normalizes this condition.
+- Default severity: `warning`
+- Category: `formatting`
+
+A cue line ends with spaces or tabs.
 
 <a id="control-character"></a>
-### `CONTROL_CHARACTER` — warning
+## `CONTROL_CHARACTER` — Control character
 
-Cue text contains an unexpected ASCII control character. Newline and tab are not flagged.
+- Default severity: `warning`
+- Category: `content`
+
+Cue text contains an unexpected control character.
 
 <a id="duplicate-identifier"></a>
-### `DUPLICATE_IDENTIFIER` — warning
+## `DUPLICATE_IDENTIFIER` — Duplicate cue identifier
 
-A non-empty cue identifier is reused in the same document.
+- Default severity: `warning`
+- Category: `structure`
 
-## Operational diagnostics
-
-Operational codes are included by `subtitleops rules --all`. They return exit code `2` when encountered.
+A non-empty cue identifier is reused.
 
 <a id="parse-error"></a>
-### `PARSE_ERROR` — error
+## `PARSE_ERROR` — Subtitle parse error
 
-The selected parser could not interpret the document.
+- Default severity: `error`
+- Category: `operational`
+
+The subtitle document could not be parsed.
 
 <a id="io-error"></a>
-### `IO_ERROR` — error
+## `IO_ERROR` — Input/output error
 
-A path could not be listed/read or was not a regular file/directory.
+- Default severity: `error`
+- Category: `operational`
+
+The subtitle file could not be read.
 
 <a id="decode-error"></a>
-### `DECODE_ERROR` — error
+## `DECODE_ERROR` — Text decoding error
 
-Input is not valid UTF-8/UTF-8-BOM text.
+- Default severity: `error`
+- Category: `operational`
+
+The subtitle file is not valid UTF-8 text.
+
+<a id="file-too-large"></a>
+## `FILE_TOO_LARGE` — Subtitle file too large
+
+- Default severity: `error`
+- Category: `operational`
+
+The subtitle exceeds the configured bounded-read limit.
 
 <a id="input-not-found"></a>
-### `INPUT_NOT_FOUND` — error
+## `INPUT_NOT_FOUND` — Input not found
+
+- Default severity: `error`
+- Category: `operational`
 
 A requested input path does not exist.
 
 <a id="unsupported-format"></a>
-### `UNSUPPORTED_FORMAT` — error
+## `UNSUPPORTED_FORMAT` — Unsupported subtitle format
 
-An explicit file is not `.srt`/`.vtt` and no `--format` override was supplied.
+- Default severity: `error`
+- Category: `operational`
+
+A requested file is not a supported text subtitle and no format override was supplied.
 
 <a id="no-files"></a>
-### `NO_FILES` — error
+## `NO_FILES` — No subtitle files discovered
 
-No supported file was discovered and `allow_empty` is false.
+- Default severity: `error`
+- Category: `operational`
+
+Input discovery found no supported subtitle files.
