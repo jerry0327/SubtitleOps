@@ -15,11 +15,11 @@ jobs:
   check-subtitles:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - id: subtitles
-        uses: jerry0327/SubtitleOps@main # pin a tag or full commit for production
+        uses: jerry0327/SubtitleOps@v0.3.0
         with:
           paths: |
             subtitles/
@@ -42,10 +42,10 @@ permissions:
   security-events: write
 
 steps:
-  - uses: actions/checkout@v6
+  - uses: actions/checkout@v7
     with:
       persist-credentials: false
-  - uses: jerry0327/SubtitleOps@main
+  - uses: jerry0327/SubtitleOps@v0.3.0
     with:
       paths: subtitles/
       upload-sarif: "true"
@@ -82,6 +82,11 @@ Boolean overrides accept `true`/`false`, `1`/`0`, or `yes`/`no` in the runner. T
 
 The action's final step exits with `exit-code`. Use `continue-on-error: true` at the caller step only when another step should inspect outputs before the job is allowed to fail.
 
-## Pinning
+## Pinning policy
 
-`@main` is useful while the project is alpha. Production workflows should pin a reviewed release tag or full commit SHA to avoid unreviewed action changes.
+- `@v0.3.0`: immutable release tag; recommended when upgrading intentionally.
+- full commit SHA: strongest supply-chain pinning.
+- `@v0`: floating compatibility tag that follows the latest 0.x release.
+- `@main`: development surface only; not recommended for production callers.
+
+Published semantic version tags are immutable. The release workflow moves only the floating major tag after a successful release.

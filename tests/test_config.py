@@ -60,7 +60,7 @@ max_line_length = 38
             config.write_text("[check]\nmax_cps = 18\n", encoding="utf-8")
             nested = root / "a" / "b"
             nested.mkdir(parents=True)
-            self.assertEqual(find_config(nested), config)
+            self.assertEqual(find_config(nested), config.resolve())
 
     def test_programmatic_config_is_normalized(self):
         config = validate_check_config(

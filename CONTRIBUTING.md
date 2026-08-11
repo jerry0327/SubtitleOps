@@ -13,16 +13,17 @@ python -m pip install -e ".[dev]"
 python -m unittest discover -s tests -v
 ```
 
-Python 3.10–3.14 are supported. Python 3.10 installs `tomli`; Python 3.11+ uses the standard-library TOML parser.
+Python 3.10–3.14 are supported. Python 3.10 installs `tomli`; Python 3.11+ uses the standard-library TOML parser. CI also exercises Python 3.12 on Windows and macOS.
 
 ## Useful contributions
 
 - a minimized subtitle sample that exposes a parser edge case;
-- a regression test for malformed SRT/WebVTT input;
-- a narrowly defined lint rule with stable code and documentation;
+- a regression test for malformed SRT, WebVTT, TTML, or DFXP input;
+- a narrowly defined lint rule with a stable code and documentation;
 - improvements to directory discovery, JSON/SARIF interoperability, or diagnostics;
 - documentation for reproducible CI and localization workflows;
-- fuzz/property-test infrastructure that does not obscure a minimal failing case.
+- fuzz/property-test infrastructure that does not obscure a minimal failing case;
+- an adoption report that identifies a real compatibility need without exposing private subtitle content.
 
 Remove private, identifying, or copyrighted dialogue from samples when it is not required to reproduce the behavior.
 
@@ -32,25 +33,27 @@ Run before opening a pull request:
 
 ```bash
 python -m unittest discover -s tests -v
-python -m compileall -q src tests
-subtitleops check examples/clean.srt --no-config
-subtitleops check examples/clean.srt --json --no-config > /tmp/subtitleops.json
-subtitleops check examples/clean.srt --sarif --no-config > /tmp/subtitleops.sarif
+python -m compileall -q src tests scripts
+python scripts/validate_repository.py
+subtitleops check examples/clean.srt examples/clean.vtt examples/clean.ttml --no-config
+subtitleops check examples/ --json --no-config > /tmp/subtitleops.json
+subtitleops check examples/ --sarif --no-config > /tmp/subtitleops.sarif
 python -m build
 ```
 
-CI repeats tests across supported Python versions and validates the built wheel in a clean virtual environment.
+CI repeats tests across supported Python versions, validates Windows/macOS behavior, self-tests the composite action, and installs the built wheel in a clean virtual environment.
 
 ## Pull requests
 
 Please:
 
 1. keep one coherent product change per pull request;
-2. add/update tests for behavior changes;
+2. add or update tests for behavior changes;
 3. update `README.md` and relevant `docs/` contracts;
 4. update `CHANGELOG.md` for user-visible changes;
 5. describe compatibility impact for rule IDs, JSON, SARIF, configuration, CLI, or public API;
-6. avoid new runtime dependencies unless their value and maintenance cost are explicit.
+6. avoid new runtime dependencies unless their value and maintenance cost are explicit;
+7. avoid claims about adoption, usage, or interoperability that cannot be verified publicly.
 
 ## Parser changes
 
@@ -105,4 +108,4 @@ Clear imperative messages are preferred:
 
 ## Conduct and security
 
-Follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Report security issues according to [SECURITY.md](SECURITY.md), not through a public issue.
+Follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Report security issues according to [SECURITY.md](SECURITY.md), not through a public issue. See [GOVERNANCE.md](GOVERNANCE.md) for project decision-making and [SUPPORT.md](SUPPORT.md) for normal support channels.

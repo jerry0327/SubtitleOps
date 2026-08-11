@@ -1,0 +1,57 @@
+name: Adoption report
+description: Tell us how a public project or workflow uses SubtitleOps.
+title: "[Adoption]: "
+labels:
+  - documentation
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Adoption reports help prioritize compatibility and maintenance work. Do not include private repository details, secrets, or copyrighted subtitle text.
+  - type: input
+    id: project
+    attributes:
+      label: Public project or organization
+      description: A public repository or website, when one can be shared.
+      placeholder: https://github.com/example/project
+  - type: dropdown
+    id: integration
+    attributes:
+      label: Integration
+      options:
+        - Command-line checks
+        - GitHub Action
+        - Python API
+        - JSON or SARIF consumer
+        - Conversion or repair workflow
+        - Other
+    validations:
+      required: true
+  - type: checkboxes
+    id: formats
+    attributes:
+      label: Subtitle formats
+      options:
+        - label: SRT
+        - label: WebVTT
+        - label: TTML or DFXP
+  - type: input
+    id: scale
+    attributes:
+      label: Approximate scale
+      description: Optional. Examples include files per run, contributors, or CI frequency.
+      placeholder: About 500 files per release
+  - type: textarea
+    id: workflow
+    attributes:
+      label: How SubtitleOps is used
+      description: Describe the quality gate, migration stage, or publishing workflow.
+    validations:
+      required: true
+  - type: textarea
+    id: feedback
+    attributes:
+      label: Most important feedback
+      description: What should remain stable, and what would make the integration more useful?
+    validations:
+      required: true
