@@ -1,107 +1,41 @@
 # Reporting contracts
 
-SubtitleOps renders one batch result as text, JSON, or SARIF. Output order is deterministic by normalized path and cue/rule evaluation order.
-
-## Text
-
-Text output is intended for terminals and CI logs.
-
-```text
-subtitles/en.srt:18: cue 6: ERROR OVERLAP: overlaps previous cue by 120 ms
-Checked 3/3 file(s), 74 cue(s): 1 issue(s) (1 error, 0 warning, 0 info); 0 operational error(s).
-```
-
-A clean single-file check prints an `OK` line. For directory batches, clean files are omitted unless `--show-clean` is supplied.
+One `BatchReport` can be rendered as text, JSON schema version 1, or SARIF 2.1.0.
 
 ## JSON schema version 1
 
-Use:
+The top-level envelope contains:
 
-```bash
-subtitleops check subtitles/ --json
-```
+- `schema_version`;
+- tool name/version;
+- selected configuration source;
+- aggregate summary and effective failure threshold;
+- discovery errors;
+- per-file path, detected format (`srt`, `vtt`, or `ttml`), cue count, issues, and optional operational error.
 
-Top-level fields:
-
-| Field | Meaning |
-| --- | --- |
-| `schema_version` | Integer report schema version; currently `1`. |
-| `tool` | Tool name and version. |
-| `config.source` | Selected configuration path relative to the run directory, or `null`. |
-| `summary` | Aggregate file, cue, issue, severity, error, threshold, and exit counts. |
-| `errors` | Input/discovery errors not associated with a parsed file. |
-| `files` | Ordered per-file records. |
-
-Per-file fields:
-
-- `path`;
-- detected `format` or `null`;
-- parsed `cues` count;
-- `issues` array;
-- `error` object or `null`.
-
-A finding may contain:
-
-```json
-{
-  "code": "OVERLAP",
-  "severity": "error",
-  "cue": 8,
-  "message": "overlaps previous cue by 120 ms",
-  "line": 31,
-  "start_ms": 15200,
-  "end_ms": 17400
-}
-```
-
-Optional coordinates are omitted when unavailable.
-
-### Compatibility policy
-
-Within schema version 1:
-
-- existing fields will retain their meaning;
-- new optional fields may be added;
-- new diagnostic codes may be added;
-- array ordering remains deterministic.
-
-A breaking structural change requires incrementing `schema_version`.
+Adding TTML and `FILE_TOO_LARGE` is additive within schema version 1. Consumers should treat diagnostic codes and format values as extensible strings rather than closed enums unless they deliberately enforce a version-specific allow-list.
 
 ## SARIF 2.1.0
 
-Use:
+SARIF output includes:
 
-```bash
-subtitleops check subtitles/ --sarif -o subtitleops.sarif
-```
+- the full diagnostic registry;
+- severity mapped to `note`, `warning`, or `error`;
+- artifact URI and source line where available;
+- cue number and cue start/end milliseconds;
+- deterministic `subtitleops/v1` partial fingerprints;
+- operational results for missing, unsupported, oversized, undecodable, unreadable, and malformed files;
+- invocation success, exit code, counts, and effective threshold.
 
-SARIF contains:
+TTML source locations identify the source `<p>` line using deterministic lexical scanning. They are intended for navigation, not as a full XML source map.
 
-- a `SubtitleOps` driver with version and rule metadata;
-- one result per lint or operational diagnostic;
-- `artifactLocation.uri` relative to the run directory where possible;
-- `region.startLine` for parsed cue findings;
-- cue number and timing in result properties;
-- deterministic `partialFingerprints` so code-scanning systems can correlate findings across source-line movement;
-- one invocation with exit code, execution status, and aggregate counts.
+## Text
 
-Severity mapping:
+Text output is line-oriented and suitable for logs. `--show-clean` includes successful files. A final aggregate summary is always printed.
 
-| SubtitleOps | SARIF |
-| --- | --- |
-| `info` | `note` |
-| `warning` | `warning` |
-| `error` | `error` |
+## Stability
 
-Parse, decode, input, and I/O failures are emitted as SARIF results with operational rule IDs. `executionSuccessful` is false when any such error occurs.
-
-## Output files
-
-`-o/--output` writes the selected report atomically and creates parent directories. Use `-o -` to force stdout. Machine output is not mixed with status prose on stdout.
-
-```bash
-subtitleops check subtitles --json -o artifacts/report.json
-subtitleops check subtitles --sarif -o artifacts/report.sarif
-```
-
-The command's exit status remains the quality-gate result even when output is written to a file.
+- Existing diagnostic codes are not repurposed.
+- JSON schema changes that break existing consumers require a schema-version increment.
+- New optional fields, rule codes, and supported format values may be added within a schema version.
+- SARIF rule metadata and help URIs are generated from the same registry used by linting.

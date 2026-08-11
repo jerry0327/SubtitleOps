@@ -2,10 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import stat
 import sys
-import tempfile
 from dataclasses import replace
 from pathlib import Path
 from typing import Sequence
@@ -13,42 +10,20 @@ from typing import Sequence
 from . import __version__
 from .checking import run_check
 from .config import CheckConfig, ConfigError, load_config, validate_check_config
-from .formats import SubtitleFormat, SubtitleParseError, detect_format, parse_text, render_text as render_subtitle
+from .fileio import DEFAULT_MAX_FILE_BYTES, read_utf8, write_text_atomic
+from .formats import (
+    SubtitleParseError,
+    detect_format,
+    parse_document,
+    render_document,
+    render_text as render_subtitle,
+)
+from .models import SubtitleFormat
 from .reporting import render_json, render_sarif, render_text as render_text_report
 from .rules import LINT_RULE_CODES, iter_rules
 from .transforms import normalize_text, resolve_overlaps, shift_cues
 
-
-def _read(path: Path) -> str:
-    return path.read_text(encoding="utf-8-sig")
-
-
-def _write(path: Path, content: str) -> None:
-    """Atomically replace a UTF-8 text file while preserving its mode when possible."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    existing_mode: int | None = None
-    try:
-        existing_mode = stat.S_IMODE(path.stat().st_mode)
-    except FileNotFoundError:
-        pass
-
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{path.name}.",
-        suffix=".tmp",
-        dir=path.parent,
-    )
-    temporary = Path(temporary_name)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(content)
-            handle.flush()
-            os.fsync(handle.fileno())
-        if existing_mode is not None:
-            os.chmod(temporary, existing_mode)
-        os.replace(temporary, path)
-    except BaseException:
-        temporary.unlink(missing_ok=True)
-        raise
+_FORMAT_CHOICES = ["srt", "vtt", "ttml"]
 
 
 def _format_for_path(path: Path, explicit: str | None = None) -> SubtitleFormat:
@@ -72,6 +47,7 @@ def _effective_check_config(base: CheckConfig, args: argparse.Namespace) -> Chec
         "max_lines",
         "min_duration_ms",
         "max_duration_ms",
+        "max_file_bytes",
         "fail_on",
         "recursive",
         "jobs",
@@ -98,7 +74,7 @@ def _effective_check_config(base: CheckConfig, args: argparse.Namespace) -> Chec
 
 def _emit(content: str, output: str | None) -> None:
     if output and output != "-":
-        _write(Path(output), content)
+        write_text_atomic(Path(output), content)
     else:
         sys.stdout.write(content)
 
@@ -124,6 +100,22 @@ def cmd_check(args: argparse.Namespace) -> int:
     return report.exit_code()
 
 
+def _render_transformed_document(
+    *,
+    input_format: SubtitleFormat,
+    output_format: SubtitleFormat,
+    document,
+    cues,
+) -> str:
+    if input_format == output_format:
+        if input_format == "ttml":
+            raise ValueError(
+                "same-format TTML rewriting is not supported because styling and layout would not be preserved"
+            )
+        return render_document(document.with_cues(cues))
+    return render_subtitle(cues, output_format)
+
+
 def cmd_fix(args: argparse.Namespace) -> int:
     src = Path(args.input)
     out = Path(args.output) if args.output else src
@@ -134,8 +126,11 @@ def cmd_fix(args: argparse.Namespace) -> int:
         output_fmt = _format_for_path(out)
     else:
         output_fmt = input_fmt
-    cues = parse_text(_read(src), input_fmt)
-    cues = normalize_text(cues)
+    document = parse_document(
+        read_utf8(src, max_file_bytes=args.max_file_bytes),
+        input_fmt,
+    )
+    cues = normalize_text(document.cues)
 
     effective_shift = 0
     if args.shift_ms:
@@ -144,7 +139,13 @@ def cmd_fix(args: argparse.Namespace) -> int:
     if args.resolve_overlaps:
         cues, overlap_changes = resolve_overlaps(cues, min_duration_ms=args.min_duration_ms)
 
-    _write(out, render_subtitle(cues, output_fmt))
+    content = _render_transformed_document(
+        input_format=input_fmt,
+        output_format=output_fmt,
+        document=document,
+        cues=cues,
+    )
+    write_text_atomic(out, content)
     summary = [f"wrote {len(cues)} cues to {out}"]
     if args.shift_ms:
         summary.append(f"shift={effective_shift}ms")
@@ -159,8 +160,18 @@ def cmd_convert(args: argparse.Namespace) -> int:
     out = Path(args.output)
     input_fmt = _format_for_path(src, args.input_format)
     output_fmt = _format_for_path(out, args.output_format)
-    cues = parse_text(_read(src), input_fmt)
-    _write(out, render_subtitle(normalize_text(cues), output_fmt))
+    document = parse_document(
+        read_utf8(src, max_file_bytes=args.max_file_bytes),
+        input_fmt,
+    )
+    cues = normalize_text(document.cues)
+    content = _render_transformed_document(
+        input_format=input_fmt,
+        output_format=output_fmt,
+        document=document,
+        cues=cues,
+    )
+    write_text_atomic(out, content)
     print(f"converted {len(cues)} cues: {input_fmt} -> {output_fmt}: {out}")
     return 0
 
@@ -194,14 +205,14 @@ def cmd_rules(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="subtitleops",
-        description="Lint, normalize, repair, and convert subtitle files.",
+        description="Lint, normalize, repair, and convert text subtitle files.",
     )
     parser.add_argument("--version", action="version", version=f"subtitleops {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     check = subparsers.add_parser("check", help="lint files or directories")
     check.add_argument("inputs", nargs="+", help="subtitle files or directories")
-    check.add_argument("--format", choices=["srt", "vtt"], help="force one input format")
+    check.add_argument("--format", choices=_FORMAT_CHOICES, help="force one input format")
     check.add_argument("--config", help="explicit .subtitleops.toml or pyproject.toml")
     check.add_argument("--no-config", action="store_true", help="disable configuration discovery")
     check.add_argument("--max-cps", type=float)
@@ -209,6 +220,7 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("--max-lines", type=int)
     check.add_argument("--min-duration-ms", type=int, help="0 disables the minimum duration rule")
     check.add_argument("--max-duration-ms", type=int, help="0 disables the maximum duration rule")
+    check.add_argument("--max-file-bytes", type=int, help="bounded read limit; 0 disables the guard")
     check.add_argument("--fail-on", choices=["info", "warning", "error", "none"])
     check.add_argument("--ignore", action="append", help="ignore a lint rule code; repeat or comma-separate")
     check.add_argument("--include", action="append", help="directory include glob; repeat or comma-separate")
@@ -235,18 +247,20 @@ def build_parser() -> argparse.ArgumentParser:
     fix = subparsers.add_parser("fix", help="normalize and optionally repair subtitle timing")
     fix.add_argument("input")
     fix.add_argument("-o", "--output")
-    fix.add_argument("--input-format", choices=["srt", "vtt"])
-    fix.add_argument("--output-format", choices=["srt", "vtt"])
+    fix.add_argument("--input-format", choices=_FORMAT_CHOICES)
+    fix.add_argument("--output-format", choices=_FORMAT_CHOICES)
     fix.add_argument("--shift-ms", type=int, default=0)
     fix.add_argument("--resolve-overlaps", action="store_true")
     fix.add_argument("--min-duration-ms", type=int, default=100)
+    fix.add_argument("--max-file-bytes", type=int, default=DEFAULT_MAX_FILE_BYTES)
     fix.set_defaults(func=cmd_fix)
 
-    convert = subparsers.add_parser("convert", help="convert SRT <-> WebVTT")
+    convert = subparsers.add_parser("convert", help="convert among SRT, WebVTT, and TTML")
     convert.add_argument("input")
     convert.add_argument("output")
-    convert.add_argument("--input-format", choices=["srt", "vtt"])
-    convert.add_argument("--output-format", choices=["srt", "vtt"])
+    convert.add_argument("--input-format", choices=_FORMAT_CHOICES)
+    convert.add_argument("--output-format", choices=_FORMAT_CHOICES)
+    convert.add_argument("--max-file-bytes", type=int, default=DEFAULT_MAX_FILE_BYTES)
     convert.set_defaults(func=cmd_convert)
 
     rules = subparsers.add_parser("rules", help="list stable diagnostic codes")
@@ -261,7 +275,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return int(args.func(args))
-    except (OSError, SubtitleParseError, ConfigError, ValueError) as exc:
+    except (OSError, UnicodeError, SubtitleParseError, ConfigError, ValueError) as exc:
         print(f"subtitleops: error: {exc}", file=sys.stderr)
         return 2
 

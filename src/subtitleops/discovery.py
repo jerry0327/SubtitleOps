@@ -6,9 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-from .formats import SubtitleFormat
+from .models import SubtitleFormat
 
-_SUPPORTED_SUFFIXES = {".srt", ".vtt"}
+_SUPPORTED_SUFFIXES = {".srt", ".vtt", ".ttml", ".dfxp"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,11 +36,6 @@ def _directory_is_excluded(relative: Path, patterns: Iterable[str]) -> bool:
     value = relative.as_posix().rstrip("/")
     probes = (value, f"{value}/", f"{value}/__subtitleops_probe__")
     return any(fnmatch.fnmatchcase(probe, pattern) for pattern in patterns for probe in probes)
-
-
-
-def _raise_walk_error(error: OSError) -> None:
-    raise error
 
 
 def _walk_directory(
@@ -107,7 +102,7 @@ def discover_files(
                     DiscoveryError(
                         input_path,
                         "UNSUPPORTED_FORMAT",
-                        "file extension is not .srt or .vtt; use --format to override",
+                        "file extension is not .srt, .vtt, .ttml, or .dfxp; use --format to override",
                     )
                 )
                 continue
