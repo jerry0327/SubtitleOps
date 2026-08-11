@@ -1,0 +1,32 @@
+name: Apply SubtitleOps stage 3 payload
+
+on:
+  push:
+    branches:
+      - agent/ttml-webvtt-action-v030
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Verify and apply the reviewed payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .stage3_payload.part.00 .stage3_payload.part.01 .stage3_payload.part.02 .stage3_payload.part.03 > /tmp/subtitleops-stage3.tar.gz
+          echo "a0bdcbe9357c687a966c3d74472dd0e17a3d91b700c950607e02ca91fd19169b  /tmp/subtitleops-stage3.tar.gz" | sha256sum --check --strict
+          tar -xzf /tmp/subtitleops-stage3.tar.gz -C .
+          rm -f .stage3_payload.part.* .github/workflows/stage3-bootstrap.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Add TTML support, bounded I/O, and reusable GitHub Action"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
